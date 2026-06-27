@@ -96,6 +96,6 @@ Gossips/
 ---
 
 
-**Developer:** Ayush Ranjan
-**Project:** Gossips
+**Developer:** Ayush Ranjan                                                                                             
+**Project:** Gossips                                                                                                       
 **Started:** 27th June 2026
