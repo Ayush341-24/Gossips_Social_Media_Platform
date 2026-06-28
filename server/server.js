@@ -1,10 +1,18 @@
 const express = require('express');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+
+dotenv.config();
+connectDB();
 
 const app = express();
-app.get('/' , (req , res) => {
-    res.send(`<h1> The Server is running </h1>`);
+app.use(express.json());
+app.get( "/" , (req , res) => {
+    res.send(`<h1> Welcome to Gossips API </h1>`);
 })
 
-app.listen(5000 , () => {
-    console.log("Express Working.Server running at localhost:5000");
+const PORT = process.env.PORT;
+
+app.listen(PORT , () => {
+    console.log(`Server Running on port ${PORT}`);
 })
