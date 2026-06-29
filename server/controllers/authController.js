@@ -125,18 +125,51 @@ export const logout = async (req, res) => {
         });
     }
 };
-
-// getProfile api
+// Get Current User Profile
 export const getProfile = async (req, res) => {
-    try {
-        res.status(200).json({
-            message: "Profile route Working",
-        });
+  try {
+    res.status(200).json({
+      message: "Profile fetched successfully",
+      user: req.user,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+// Update Profile API
+export const updateProfile = async (req, res) => {
+  try {
+    const { fullName, bio, profilePic } = req.body;
+
+    // Find logged-in user
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
     }
-    catch (error) {
-        res.status(500).json({
-            message: error.message,
-        });
-    }
+
+    // Update only provided fields
+    if (fullName) user.fullName = fullName;
+    if (bio) user.bio = bio;
+    if (profilePic) user.profilePic = profilePic;
+
+    // Save changes
+    await user.save();
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      user,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
 };
 
