@@ -98,4 +98,4 @@ Gossips/
 
 **Developer:** Ayush Ranjan                                                                                             
 **Project:** Gossips                                                                                                       
-**Started:** 27th June 2026
+**Started:** 27th June 2026 - Present
