@@ -2,39 +2,39 @@ import User from "../models/User.js";
 import bcrypt from 'bcryptjs';
 import generateToken from "../utils/generateToken.js";
 
-
-export const register = async (req , res) => {
-    try{
-        const {username , fullName , email , password} = req.body;
-        if(!username || !fullName || !email || !password){
+// register api
+export const register = async (req, res) => {
+    try {
+        const { username, fullName, email, password } = req.body;
+        if (!username || !fullName || !email || !password) {
             return res.status(400).json({
-                message : "Please fill all the fields",
+                message: "Please fill all the fields",
             });
         }
 
         const existingUser = await User.findOne({
-            $or : [{email} , {username}]
+            $or: [{ email }, { username }]
         });
-        if(existingUser){
+        if (existingUser) {
             return res.status(400).json({
-                message : "User already exists",
+                message: "User already exists",
             });
         }
 
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password , salt);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
         const newUser = await User.create({
-            username , 
-            fullName ,
-            email ,
-            password : hashedPassword,
+            username,
+            fullName,
+            email,
+            password: hashedPassword,
         });
 
         const token = generateToken(newUser._id);
 
         const userResponse = {
-            id : newUser._id,
+            id: newUser._id,
             username: newUser.username,
             fullName: newUser.fullName,
             email: newUser.email,
@@ -45,51 +45,97 @@ export const register = async (req , res) => {
         }
 
         res.status(201).json({
-            message : "User registered successfully",
+            message: "User registered successfully",
             token,
-            user : userResponse,
+            user: userResponse,
         });
     }
-    catch(error){
+    catch (error) {
         res.status(500).json({
-            message : error.message,
+            message: error.message,
         });
     }
 };
 
-export const login = async (req , res) => {
-    try{
+// login api
+export const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "Please fill all the fields",
+            });
+        }
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found",
+            });
+        }
+
+        const isPasswordCorrect = await bcrypt.compare(
+            password,
+            user.password
+        );
+        if (!isPasswordCorrect) {
+            return res.status(401).json({
+                message: "Invalid Credentials",
+            });
+        }
+        // Generate JWT
+        const token = generateToken(user._id);
+
+        // Safe User Response
+        const userResponse = {
+            _id: user._id,
+            username: user.username,
+            fullName: user.fullName,
+            email: user.email,
+            profilePic: user.profilePic,
+            bio: user.bio,
+            followers: user.followers,
+            following: user.following,
+        };
+
         res.status(200).json({
-            message : "Login route Working",
+            message: "Login successful",
+            token,
+            user: userResponse,
         });
     }
-    catch(error){
+    catch (error) {
         res.status(500).json({
-            message : error.message,
+            message: error.message,
         });
     }
 };
-export const logout = async (req , res) => {
-    try{
+
+// logout api
+export const logout = async (req, res) => {
+    try {
         res.status(200).json({
-            message : "Logout Successful",
+            message: "Logout Successful",
         });
     }
-    catch(error){
+    catch (error) {
         res.status(500).json({
-            message : error.message,
+            message: error.message,
         });
     }
 };
-export const getProfile = async (req , res) => {
-    try{
+
+// getProfile api
+export const getProfile = async (req, res) => {
+    try {
         res.status(200).json({
-            message : "Profile route Working",
+            message: "Profile route Working",
         });
     }
-    catch(error){
+    catch (error) {
         res.status(500).json({
-            message : error.message,
+            message: error.message,
         });
     }
 };
