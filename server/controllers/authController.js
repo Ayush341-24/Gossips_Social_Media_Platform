@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import bcrypt from 'bcryptjs';
+import generateToken from "../utils/generateToken.js";
 
 
 export const register = async (req , res) => {
@@ -30,6 +31,8 @@ export const register = async (req , res) => {
             password : hashedPassword,
         });
 
+        const token = generateToken(newUser._id);
+
         const userResponse = {
             id : newUser._id,
             username: newUser.username,
@@ -43,6 +46,7 @@ export const register = async (req , res) => {
 
         res.status(201).json({
             message : "User registered successfully",
+            token,
             user : userResponse,
         });
     }
