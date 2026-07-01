@@ -17,12 +17,11 @@ function Input({
   return (
     <div className="mb-5">
 
-      <label className="mb-2 block text-sm text-white">
+      <label className="mb-2 block text-sm text-whit">
         {label}
       </label>
 
-      <div className="flex items-center rounded-xl border border-white/20 bg-white/5 px-4 py-3 backdrop-blur-lg">
-
+     <div className="flex items-center rounded-xl border border-white/20 bg-white/0 px-4 py-3 backdrop-blur-md">
         {Icon && (
           <Icon
             size={20}

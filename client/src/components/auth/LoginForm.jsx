@@ -1,15 +1,21 @@
 import { Mail, Lock } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import AuthHeader from "./AuthHeader";
 import Input from "../ui/Input";
 import Button from "../ui/Button";
+import { loginUser } from "../../api/auth";
 
 function LoginForm() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+
+  const [loading, setLoading] = useState(false);
+
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({
@@ -18,15 +24,41 @@ function LoginForm() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    console.log(formData);
+    try {
+      setLoading(true);
+
+      const data = await loginUser(formData);
+
+      console.log("Login Success:", data);
+
+      // Save JWT Token
+      localStorage.setItem("token", data.token);
+
+      // Save Logged In User
+      localStorage.setItem(
+        "user",
+        JSON.stringify(data.user)
+      );
+
+      alert("Login Successful!");
+
+      navigate("/");
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        error.response?.data?.message || "Login Failed"
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <form onSubmit={handleSubmit}>
-
       <AuthHeader />
 
       <h2 className="mb-2 text-4xl font-bold text-white">
@@ -58,24 +90,19 @@ function LoginForm() {
       />
 
       <div className="mb-6 text-right">
-
         <button
           type="button"
           className="text-sm text-violet-300 hover:text-violet-200"
         >
           Forgot Password?
         </button>
-
       </div>
 
-      <Button type="submit">
-
-        Login
-
+      <Button type="submit" disabled={loading}>
+        {loading ? "Logging in..." : "Login"}
       </Button>
 
       <div className="my-6 flex items-center">
-
         <div className="h-px flex-1 bg-white/20"></div>
 
         <span className="mx-4 text-white">
@@ -83,7 +110,6 @@ function LoginForm() {
         </span>
 
         <div className="h-px flex-1 bg-white/20"></div>
-
       </div>
 
       <button
@@ -94,17 +120,12 @@ function LoginForm() {
       </button>
 
       <p className="mt-8 text-center text-slate-300">
-
         Don't have an account?
 
         <span className="ml-2 cursor-pointer font-semibold text-violet-300 hover:text-violet-200">
-
           Sign Up
-
         </span>
-
       </p>
-
     </form>
   );
 }
