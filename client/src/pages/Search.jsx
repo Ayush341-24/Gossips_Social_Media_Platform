@@ -1,5 +1,11 @@
+import { Search as SearchIcon, UserPlus, ArrowUpRight } from "lucide-react";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import AppShell from "../components/AppShell";
+const people = [["sana.jpg", "Sana Khan", "sana.jpg", "Creative director"], ["leo.lines", "Leo Martins", "leo.lines", "Writer & coffee enthusiast"], ["nora.notes", "Nora Patel", "nora.notes", "Making sense of the world"]];
 function Search() {
-  return <h1>Search Page</h1>;
+  const [query, setQuery] = useState("");
+  const matches = people.filter(([handle, name]) => `${handle} ${name}`.toLowerCase().includes(query.toLowerCase()));
+  return <AppShell title="Discover"><div className="glass-card p-5"><div className="input-shell px-4 py-3"><SearchIcon size={19} className="text-fuchsia-300" /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search people and conversations" /></div><div className="mt-8 flex items-center justify-between"><p className="eyebrow">People you may like</p><span className="text-xs text-slate-600">{matches.length} results</span></div><div className="mt-4 divide-y divide-white/10">{matches.map(([handle, name, alt, bio]) => <div key={handle} className="flex items-center justify-between py-4"><Link to="/profile/demo" className="flex items-center gap-3"><img className="avatar-md" src={`https://i.pravatar.cc/120?u=${handle}`} alt={alt} /><div><p className="font-bold text-white">{name}</p><p className="text-xs text-fuchsia-300">@{handle}</p><p className="mt-1 text-xs text-slate-500">{bio}</p></div></Link><button className="profile-button"><UserPlus size={15} /> Follow</button></div>)}</div>{!matches.length && <div className="py-16 text-center"><p className="text-lg font-bold text-white">No one found yet</p><p className="mt-2 text-sm text-slate-500">Try another name or handle.</p></div>}</div><div className="mt-6 gradient-card flex items-center justify-between p-6"><div><p className="eyebrow text-white/60">Explore the feed</p><p className="mt-2 text-lg font-bold text-white">There is always another story.</p></div><Link to="/" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white"><ArrowUpRight size={18} /></Link></div></AppShell>;
 }
-
 export default Search;

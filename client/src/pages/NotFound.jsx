@@ -1,5 +1,3 @@
-function NotFound() {
-  return <h1>404 Page Not Found</h1>;
-}
-
+import { Link } from "react-router-dom";
+function NotFound() { return <div className="auth-page flex min-h-screen items-center justify-center px-5 text-center"><div><p className="eyebrow">404 / lost in the feed</p><h1 className="mt-4 text-8xl font-black tracking-tighter text-white">Oops<span className="text-fuchsia-400">.</span></h1><p className="mx-auto mt-5 max-w-sm text-slate-500">This page wandered off. Let’s get you back to something good.</p><Link to="/" className="mt-8 inline-block rounded-xl bg-fuchsia-500 px-5 py-3 text-sm font-bold text-white">Back home</Link></div></div>; }
 export default NotFound;

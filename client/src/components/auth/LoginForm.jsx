@@ -1,6 +1,7 @@
 import { Mail, Lock } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/useAuth";
 
 import AuthHeader from "./AuthHeader";
 import Input from "../ui/Input";
@@ -16,6 +17,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleChange = (e) => {
     setFormData({
@@ -32,26 +34,14 @@ function LoginForm() {
 
       const data = await loginUser(formData);
 
-      console.log("Login Success:", data);
-
-      // Save JWT Token
       localStorage.setItem("token", data.token);
-
-      // Save Logged In User
-      localStorage.setItem(
-        "user",
-        JSON.stringify(data.user)
-      );
-
-      alert("Login Successful!");
+      login(data.user);
 
       navigate("/");
     } catch (error) {
       console.error(error);
 
-      alert(
-        error.response?.data?.message || "Login Failed"
-      );
+      alert(error.response?.data?.message || "Login Failed");
     } finally {
       setLoading(false);
     }
@@ -122,7 +112,7 @@ function LoginForm() {
       <p className="mt-8 text-center text-slate-300">
         Don't have an account?
 
-        <span className="ml-2 cursor-pointer font-semibold text-violet-300 hover:text-violet-200">
+        <span onClick={() => navigate("/register")} className="ml-2 cursor-pointer font-semibold text-violet-300 hover:text-violet-200">
           Sign Up
         </span>
       </p>

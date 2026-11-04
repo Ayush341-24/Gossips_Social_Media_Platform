@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./context/useAuth";
 
 import Home from "./pages/Home";
 import Login from "./pages/Login";
@@ -7,6 +8,11 @@ import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
 import Search from "./pages/Search";
 import NotFound from "./pages/NotFound";
+
+function ProtectedRoute({ children }) {
+  const { user } = useAuth();
+  return user ? children : <Navigate to="/login" replace />;
+}
 
 function App() {
   return (
@@ -19,11 +25,11 @@ function App() {
 
         <Route path="/register" element={<Register />} />
 
-        <Route path="/profile/:id" element={<Profile />} />
+        <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
-        <Route path="/edit-profile" element={<EditProfile />} />
+        <Route path="/edit-profile" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
 
-        <Route path="/search" element={<Search />} />
+        <Route path="/search" element={<ProtectedRoute><Search /></ProtectedRoute>} />
 
         <Route path="*" element={<NotFound />} />
 

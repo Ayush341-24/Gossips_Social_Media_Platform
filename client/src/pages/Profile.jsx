@@ -1,5 +1,14 @@
-function Profile() {
-  return <h1>Profile Page</h1>;
-}
+import { Grid3X3, Heart, MapPin, Pencil, UserPlus } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import AppShell from "../components/AppShell";
+import { useAuth } from "../context/useAuth";
 
+const photos = ["https://images.unsplash.com/photo-1518005020951-eccb494ad742?auto=format&fit=crop&w=500&q=80", "https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=500&q=80", "https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&w=500&q=80", "https://images.unsplash.com/photo-1511988617509-a57c8a288659?auto=format&fit=crop&w=500&q=80", "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=500&q=80", "https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=500&q=80"];
+function Profile() {
+  const { user } = useAuth();
+  const { id } = useParams();
+  const own = !id || id === "me" || id === user?._id || id === user?.id;
+  const person = own ? { username: user?.username || "your.story", fullName: user?.fullName || "Your name", profilePic: user?.profilePic || "https://i.pravatar.cc/160?img=12", bio: user?.bio || "Collecting tiny moments and turning them into stories." } : { username: "maya.makes", fullName: "Maya Sharma", profilePic: "https://i.pravatar.cc/160?img=47", bio: "Design, color, and finding beauty in the everyday." };
+  return <AppShell title="Profile"><div className="glass-card overflow-hidden"><div className="profile-cover" /><div className="px-6 pb-7 sm:px-8"><div className="-mt-12 flex flex-wrap items-end justify-between gap-5"><img className="profile-avatar" src={person.profilePic} alt="" /><div className="flex gap-2">{own ? <Link to="/edit-profile" className="profile-button"><Pencil size={15} /> Edit profile</Link> : <button className="profile-button"><UserPlus size={15} /> Follow</button>}</div></div><div className="mt-5"><h2 className="text-2xl font-black text-white">{person.fullName}</h2><p className="text-sm text-fuchsia-300">@{person.username}</p><p className="mt-4 max-w-lg text-sm leading-6 text-slate-400">{person.bio}</p><p className="mt-3 flex items-center gap-2 text-xs text-slate-500"><MapPin size={14} /> Mumbai, India · Joined recently</p></div><div className="mt-7 flex gap-8 border-t border-white/10 pt-5"><div><strong className="text-white">24</strong><span className="ml-2 text-sm text-slate-500">posts</span></div><div><strong className="text-white">1.8k</strong><span className="ml-2 text-sm text-slate-500">followers</span></div><div><strong className="text-white">284</strong><span className="ml-2 text-sm text-slate-500">following</span></div></div></div></div><div className="mt-6 flex items-center gap-2 border-b border-white/10 pb-3 text-sm font-bold text-white"><Grid3X3 size={17} className="text-fuchsia-300" /> Posts</div><div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">{photos.map((photo) => <div key={photo} className="group relative aspect-square overflow-hidden rounded-2xl bg-white/5"><img src={photo} alt="" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" /><div className="absolute inset-0 flex items-center justify-center gap-4 bg-black/50 opacity-0 transition group-hover:opacity-100"><span><Heart size={16} fill="white" /> 124</span></div></div>)}</div></AppShell>;
+}
 export default Profile;
