@@ -4,19 +4,27 @@ import User from '../models/User.js';
 
 const protect = async (req, res, next) => {
     try {
-        const token = req.headers.authorization;
+        const authorization = req.headers.authorization;
 
-        if (!token) {
+        if (!authorization || !authorization.startsWith("Bearer ")) {
             return res.status(401).json({
-                message: "No token provided",
+                success: false,
+                message: "Authentication token is required",
             });
         }
-        const jwtToken = token.split(" ")[1];
+        const jwtToken = authorization.split(" ")[1];
+        if (!jwtToken) {
+            return res.status(401).json({
+                success: false,
+                message: "Authentication token is required",
+            });
+        }
         const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
         const user = await User.findById(decoded.userId).select("-password");
         // Check if user exists
         if (!user) {
             return res.status(404).json({
+                success: false,
                 message: "User not found",
             });
         }
@@ -27,7 +35,8 @@ const protect = async (req, res, next) => {
     }
     catch (error) {
         res.status(401).json({
-            message: "Invalid Token",
+            success: false,
+            message: "Invalid or expired token",
         });
     }
 };

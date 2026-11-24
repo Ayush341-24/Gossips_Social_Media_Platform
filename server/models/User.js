@@ -18,6 +18,13 @@ const userSchema = new mongoose.Schema(
             trim : true ,
         },
 
+        fullName : {
+            type : String,
+            trim : true,
+            maxlength : 50,
+            default : "",
+        },
+
         password : {
             type : String , 
             required : true , 
@@ -26,6 +33,11 @@ const userSchema = new mongoose.Schema(
 
         profilePic : {
             type : String ,
+            default : "",
+        },
+
+        profilePicPublicId : {
+            type : String,
             default : "",
         },
 

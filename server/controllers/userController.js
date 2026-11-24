@@ -1,5 +1,16 @@
 import User from "../models/User.js";
-import cloudinary from "../config/cloudinary.js";
+import { uploadProfilePicture, deleteCloudinaryImage } from "../config/cloudinary.js";
+
+const getSafeUser = (user) => ({
+  _id: user._id,
+  username: user.username,
+  fullName: user.fullName,
+  email: user.email,
+  profilePic: user.profilePic,
+  bio: user.bio,
+  followers: user.followers,
+  following: user.following,
+});
 
 
 // Get User By ID
@@ -210,35 +221,75 @@ export const updateProfilePicture = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: "Profile picture is required",
+        message: "No image uploaded. Select a profile picture.",
       });
     }
 
-    const result = await cloudinary.uploader.upload(
-      `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`,
-      {
-        folder: "gossips_profiles",
-      }
-    );
+    if (!Buffer.isBuffer(req.file.buffer) || req.file.buffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid image buffer",
+      });
+    }
 
     const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
 
-    user.profilePicture = result.secure_url;
+    let uploadResult;
+    try {
+      uploadResult = await uploadProfilePicture(req.file.buffer);
+    } catch (error) {
+      console.error("Cloudinary profile picture upload failed:", error.message);
+      return res.status(502).json({
+        success: false,
+        message: "Cloudinary upload failed",
+      });
+    }
 
-    await user.save();
+    const previousPublicId = user.profilePicPublicId;
+
+    user.profilePic = uploadResult.secureUrl;
+    user.profilePicPublicId = uploadResult.publicId;
+
+    try {
+      await user.save();
+    } catch (error) {
+      try {
+        await deleteCloudinaryImage(uploadResult.publicId);
+      } catch (cleanupError) {
+        console.error("Failed to delete newly uploaded image:", cleanupError.message);
+      }
+      console.error("MongoDB profile picture update failed:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update profile picture",
+      });
+    }
+
+    if (previousPublicId && previousPublicId !== uploadResult.publicId) {
+      try {
+        await deleteCloudinaryImage(previousPublicId);
+      } catch (error) {
+        console.error("Failed to delete previous Cloudinary image:", error.message);
+      }
+    }
 
     res.status(200).json({
       success: true,
       message: "Profile picture updated successfully",
-      profilePicture: user.profilePicture,
+      user: getSafeUser(user),
     });
 
   } catch (error) {
-    console.error(error);
-
+    console.error("Unexpected profile picture update error:", error.message);
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "An unexpected server error occurred",
     });
   }
 };
