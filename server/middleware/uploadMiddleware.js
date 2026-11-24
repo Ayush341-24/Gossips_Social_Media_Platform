@@ -10,6 +10,27 @@ const allowedMimeTypes = new Set([
 
 const allowedExtensions = /\.(jpe?g|png|webp)$/i;
 
+export const isValidImageBuffer = (buffer) => {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return false;
+
+  const signature = buffer.subarray(0, 12);
+  const jpeg = signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff;
+  const png =
+    signature[0] === 0x89 &&
+    signature[1] === 0x50 &&
+    signature[2] === 0x4e &&
+    signature[3] === 0x47 &&
+    signature[4] === 0x0d &&
+    signature[5] === 0x0a &&
+    signature[6] === 0x1a &&
+    signature[7] === 0x0a;
+  const webp =
+    signature.subarray(0, 4).toString("ascii") === "RIFF" &&
+    signature.subarray(8, 12).toString("ascii") === "WEBP";
+
+  return jpeg || png || webp;
+};
+
 const fileFilter = (req, file, cb) => {
   if (!allowedMimeTypes.has(file.mimetype) || !allowedExtensions.test(file.originalname)) {
     return cb(

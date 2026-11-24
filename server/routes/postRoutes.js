@@ -14,6 +14,9 @@ import {
   addComment,
   getComments,
   deleteComment,
+  savePost,
+  unsavePost,
+  getSavedPosts,
   deletePost,
 } from "../controllers/postController.js";
 
@@ -23,10 +26,13 @@ router.post("/", protect, upload.single("image"), handleUploadError, createPost)
 router.get("/", optionalProtect, getAllPosts);
 router.get("/feed", protect, getPersonalizedFeed);
 router.get("/explore", optionalProtect, getExploreFeed);
+router.get("/saved", protect, getSavedPosts);
 router.get("/user/:userId", optionalProtect, getPostsByUser);
 router.get("/:id", optionalProtect, getPostById);
 router.post("/:id/like", protect, likePost);
 router.delete("/:id/like", protect, unlikePost);
+router.post("/:id/save", protect, savePost);
+router.delete("/:id/save", protect, unsavePost);
 router.post("/:id/comments", protect, addComment);
 router.get("/:id/comments", getComments);
 router.delete("/:id/comments/:commentId", protect, deleteComment);

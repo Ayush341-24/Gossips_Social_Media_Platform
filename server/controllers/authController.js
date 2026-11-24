@@ -5,11 +5,31 @@ import generateToken from "../utils/generateToken.js";
 // register api
 export const register = async (req, res) => {
     try {
-        const { username, fullName, email, password } = req.body;
+        const body = req.body || {};
+        const username = typeof body.username === "string" ? body.username.trim() : "";
+        const fullName = typeof body.fullName === "string" ? body.fullName.trim() : "";
+        const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+        const password = typeof body.password === "string" ? body.password : "";
         if (!username || !fullName || !email || !password) {
             return res.status(400).json({
+                success: false,
                 message: "Please fill all the fields",
             });
+        }
+        if (!/^[A-Za-z0-9_.]{3,20}$/.test(username)) {
+            return res.status(400).json({
+                success: false,
+                message: "Username must contain 3-20 letters, numbers, underscores, or dots",
+            });
+        }
+        if (fullName.length > 50) {
+            return res.status(400).json({ success: false, message: "Full name must not exceed 50 characters" });
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ success: false, message: "Invalid email format" });
+        }
+        if (password.length < 6 || password.length > 128) {
+            return res.status(400).json({ success: false, message: "Password must be between 6 and 128 characters" });
         }
 
         const existingUser = await User.findOne({
@@ -17,6 +37,7 @@ export const register = async (req, res) => {
         });
         if (existingUser) {
             return res.status(400).json({
+                success: false,
                 message: "User already exists",
             });
         }
@@ -45,6 +66,7 @@ export const register = async (req, res) => {
         }
 
         res.status(201).json({
+            success: true,
             message: "User registered successfully",
             token,
             user: userResponse,
@@ -52,7 +74,8 @@ export const register = async (req, res) => {
     }
     catch (error) {
         res.status(500).json({
-            message: error.message,
+            success: false,
+            message: "Registration failed",
         });
     }
 };
@@ -60,18 +83,22 @@ export const register = async (req, res) => {
 // login api
 export const login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const body = req.body || {};
+        const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+        const password = typeof body.password === "string" ? body.password : "";
 
         if (!email || !password) {
             return res.status(400).json({
+                success: false,
                 message: "Please fill all the fields",
             });
         }
         const user = await User.findOne({ email });
 
         if (!user) {
-            return res.status(404).json({
-                message: "User not found",
+            return res.status(401).json({
+                success: false,
+                message: "Invalid credentials",
             });
         }
 
@@ -81,7 +108,8 @@ export const login = async (req, res) => {
         );
         if (!isPasswordCorrect) {
             return res.status(401).json({
-                message: "Invalid Credentials",
+                success: false,
+                message: "Invalid credentials",
             });
         }
         // Generate JWT
@@ -100,6 +128,7 @@ export const login = async (req, res) => {
         };
 
         res.status(200).json({
+            success: true,
             message: "Login successful",
             token,
             user: userResponse,
@@ -107,7 +136,8 @@ export const login = async (req, res) => {
     }
     catch (error) {
         res.status(500).json({
-            message: error.message,
+            success: false,
+            message: "Login failed",
         });
     }
 };
@@ -121,7 +151,8 @@ export const logout = async (req, res) => {
     }
     catch (error) {
         res.status(500).json({
-            message: error.message,
+            success: false,
+            message: "Logout failed",
         });
     }
 };
@@ -129,7 +160,7 @@ export const logout = async (req, res) => {
 export const getProfile = async (req, res) => {
   try {
     const userObject = req.user.toObject ? req.user.toObject() : req.user;
-    const { followers, following, ...safeUser } = userObject;
+    const { password, profilePicPublicId, followers, following, ...safeUser } = userObject;
     res.status(200).json({
       message: "Profile fetched successfully",
       user: {
@@ -141,7 +172,8 @@ export const getProfile = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({
-      message: error.message,
+      success: false,
+      message: "Unable to fetch profile",
     });
   }
 };
@@ -149,7 +181,22 @@ export const getProfile = async (req, res) => {
 // Update Profile API
 export const updateProfile = async (req, res) => {
   try {
-    const { fullName, bio, profilePic } = req.body;
+    const body = req.body || {};
+    const fullName = typeof body.fullName === "string" ? body.fullName.trim() : undefined;
+    const bio = typeof body.bio === "string" ? body.bio.trim() : undefined;
+
+    if (fullName !== undefined && fullName.length > 50) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name must not exceed 50 characters",
+      });
+    }
+    if (bio !== undefined && bio.length > 150) {
+      return res.status(400).json({
+        success: false,
+        message: "Bio must not exceed 150 characters",
+      });
+    }
 
     // Find logged-in user
     const user = await User.findById(req.user._id);
@@ -161,21 +208,34 @@ export const updateProfile = async (req, res) => {
     }
 
     // Update only provided fields
-    if (fullName) user.fullName = fullName;
-    if (bio) user.bio = bio;
-    if (profilePic) user.profilePic = profilePic;
+    if (fullName !== undefined) user.fullName = fullName;
+    if (bio !== undefined) user.bio = bio;
 
     // Save changes
     await user.save();
 
+    const userObject = user.toObject();
+    const {
+      password,
+      profilePicPublicId,
+      followers,
+      following,
+      ...safeUser
+    } = userObject;
     res.status(200).json({
+      success: true,
       message: "Profile updated successfully",
-      user,
+      user: {
+        ...safeUser,
+        followersCount: followers.length,
+        followingCount: following.length,
+      },
     });
 
   } catch (error) {
     res.status(500).json({
-      message: error.message,
+      success: false,
+      message: "Profile update failed",
     });
   }
 };

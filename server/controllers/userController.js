@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import User from "../models/User.js";
+import Notification from "../models/Notification.js";
 import { uploadProfilePicture, deleteCloudinaryImage } from "../config/cloudinary.js";
+import { isValidImageBuffer } from "../middleware/uploadMiddleware.js";
 
 const getSafeUser = (user) => ({
   _id: user._id,
@@ -76,8 +78,10 @@ export const getUserById = async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Unexpected get user error:", error.message);
     res.status(500).json({
-      message: error.message,
+      success: false,
+      message: "An unexpected server error occurred",
     });
   }
 };
@@ -155,8 +159,10 @@ export const searchUsers = async (req, res) => {
     });
 
   } catch (error) {
+    console.error("Unexpected user search error:", error.message);
     res.status(500).json({
-      message: error.message,
+      success: false,
+      message: "An unexpected server error occurred",
     });
   }
 };
@@ -205,6 +211,17 @@ export const followUser = async (req, res) => {
         { $addToSet: { followers: currentUserId } }
       ),
     ]);
+
+    try {
+      await Notification.create({
+        recipient: targetUserId,
+        sender: currentUserId,
+        type: "follow",
+        message: "started following you",
+      });
+    } catch (notificationError) {
+      console.error("Failed to create follow notification:", notificationError.message);
+    }
 
     const [currentUser, updatedTarget] = await Promise.all([
       User.findById(currentUserId).select("following"),
@@ -496,11 +513,11 @@ export const updateProfile = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("Unexpected profile update error:", error.message);
 
     res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Profile update failed",
     });
   }
 };
@@ -518,6 +535,12 @@ export const updateProfilePicture = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Invalid image buffer",
+      });
+    }
+    if (!isValidImageBuffer(req.file.buffer)) {
+      return res.status(400).json({
+        success: false,
+        message: "The uploaded file is not a valid JPEG, PNG, or WebP image",
       });
     }
 

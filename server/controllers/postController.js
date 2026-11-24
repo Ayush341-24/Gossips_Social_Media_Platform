@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
 import Comment from "../models/Comment.js";
+import Notification from "../models/Notification.js";
+import SavedPost from "../models/SavedPost.js";
+import { isValidImageBuffer } from "../middleware/uploadMiddleware.js";
 import {
   uploadPostImage,
   deleteCloudinaryImage,
@@ -10,7 +13,7 @@ import {
 const AUTHOR_FIELDS = "username fullName profilePic";
 const MAX_LIMIT = 50;
 
-const formatPost = (post, currentUserId = null, commentCount = 0) => {
+const formatPost = (post, currentUserId = null, commentCount = 0, savedPostIds = new Set()) => {
   const result = typeof post.toObject === "function" ? post.toObject() : { ...post };
   const likes = Array.isArray(result.likes) ? result.likes : [];
   return {
@@ -21,6 +24,10 @@ const formatPost = (post, currentUserId = null, commentCount = 0) => {
       likes.some((id) => id.toString() === currentUserId.toString())
     ),
     commentCount,
+    isSavedByCurrentUser: Boolean(
+      currentUserId &&
+      savedPostIds.has(post._id.toString())
+    ),
   };
 };
 
@@ -71,11 +78,21 @@ const getFormattedPostPage = async ({
   const countByPost = new Map(
     commentCounts.map((item) => [item._id.toString(), item.count])
   );
+  const savedPosts = currentUserId && posts.length
+    ? await SavedPost.find({
+        user: currentUserId,
+        post: { $in: posts.map((post) => post._id) },
+      }).select("post").lean()
+    : [];
+  const savedPostIds = new Set(
+    savedPosts.map((saved) => saved.post.toString())
+  );
   const formattedPosts = posts.map((post) =>
     formatPost(
       post,
       currentUserId,
-      countByPost.get(post._id.toString()) || 0
+      countByPost.get(post._id.toString()) || 0,
+      savedPostIds
     )
   );
 
@@ -106,6 +123,12 @@ export const createPost = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Invalid image buffer",
+      });
+    }
+    if (!isValidImageBuffer(req.file.buffer)) {
+      return res.status(400).json({
+        success: false,
+        message: "The uploaded file is not a valid JPEG, PNG, or WebP image",
       });
     }
 
@@ -197,11 +220,21 @@ export const getAllPosts = async (req, res) => {
     const countByPost = new Map(
       commentCounts.map((item) => [item._id.toString(), item.count])
     );
+    const savedRecords = req.user
+      ? await SavedPost.find({
+          user: req.user._id,
+          post: { $in: posts.map((post) => post._id) },
+        }).select("post").lean()
+      : [];
+    const savedPostIds = new Set(
+      savedRecords.map((saved) => saved.post.toString())
+    );
     const formattedPosts = posts.map((post) =>
       formatPost(
         post,
         req.user?._id,
-        countByPost.get(post._id.toString()) || 0
+        countByPost.get(post._id.toString()) || 0,
+        savedPostIds
       )
     );
 
@@ -245,10 +278,14 @@ export const getPostById = async (req, res) => {
       });
     }
     const commentCount = await Comment.countDocuments({ post: post._id });
+    const isSaved = req.user
+      ? await SavedPost.exists({ user: req.user._id, post: post._id })
+      : null;
+    const savedPostIds = new Set(isSaved ? [post._id.toString()] : []);
 
     return res.status(200).json({
       success: true,
-      post: formatPost(post, req.user?._id, commentCount),
+      post: formatPost(post, req.user?._id, commentCount, savedPostIds),
     });
   } catch (error) {
     console.error("Unexpected get post error:", error.message);
@@ -304,11 +341,21 @@ export const getPostsByUser = async (req, res) => {
     const countByPost = new Map(
       commentCounts.map((item) => [item._id.toString(), item.count])
     );
+    const savedRecords = req.user
+      ? await SavedPost.find({
+          user: req.user._id,
+          post: { $in: posts.map((post) => post._id) },
+        }).select("post").lean()
+      : [];
+    const savedPostIds = new Set(
+      savedRecords.map((saved) => saved.post.toString())
+    );
     const formattedPosts = posts.map((post) =>
       formatPost(
         post,
         req.user?._id,
-        countByPost.get(post._id.toString()) || 0
+        countByPost.get(post._id.toString()) || 0,
+        savedPostIds
       )
     );
 
@@ -359,6 +406,28 @@ export const likePost = async (req, res) => {
         likeCount: likedPost.likes.length,
         isLikedByCurrentUser: true,
       });
+    }
+
+    if (post.author.toString() !== userId.toString()) {
+      try {
+        const alreadyExists = await Notification.exists({
+          recipient: post.author,
+          sender: userId,
+          type: "like",
+          post: post._id,
+        });
+        if (!alreadyExists) {
+          await Notification.create({
+            recipient: post.author,
+            sender: userId,
+            type: "like",
+            post: post._id,
+            message: "liked your post",
+          });
+        }
+      } catch (notificationError) {
+        console.error("Failed to create like notification:", notificationError.message);
+      }
     }
 
     return res.status(200).json({
@@ -418,6 +487,139 @@ export const unlikePost = async (req, res) => {
   }
 };
 
+export const savePost = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid post ID" });
+    }
+
+    const post = await Post.findById(req.params.id).select("_id");
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    const existing = await SavedPost.findOne({
+      user: req.user._id,
+      post: post._id,
+    });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "Post is already saved",
+      });
+    }
+
+    await SavedPost.create({ user: req.user._id, post: post._id });
+    return res.status(201).json({
+      success: true,
+      message: "Post saved successfully",
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Post is already saved",
+      });
+    }
+    console.error("Unexpected save post error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const unsavePost = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid post ID" });
+    }
+
+    const post = await Post.findById(req.params.id).select("_id");
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    const deleted = await SavedPost.findOneAndDelete({
+      user: req.user._id,
+      post: post._id,
+    });
+    if (!deleted) {
+      return res.status(409).json({
+        success: false,
+        message: "Post is not saved",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Post unsaved successfully",
+    });
+  } catch (error) {
+    console.error("Unexpected unsave post error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const getSavedPosts = async (req, res) => {
+  try {
+    const pagination = parsePagination(req.query.page, req.query.limit);
+    if (!pagination) {
+      return res.status(400).json({
+        success: false,
+        message: `page must be a positive integer and limit must be between 1 and ${MAX_LIMIT}`,
+      });
+    }
+
+    const { page, limit } = pagination;
+    const skip = (page - 1) * limit;
+    const [savedRecords, totalSavedPosts] = await Promise.all([
+      SavedPost.find({ user: req.user._id })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select("post")
+        .lean(),
+      SavedPost.countDocuments({ user: req.user._id }),
+    ]);
+    const postIds = savedRecords.map((saved) => saved.post);
+    const result = await getFormattedPostPage({
+      filter: { _id: { $in: postIds } },
+      ...pagination,
+      currentUserId: req.user._id,
+    });
+
+    const postOrder = new Map(
+      postIds.map((id, index) => [id.toString(), index])
+    );
+    result.posts.sort(
+      (a, b) =>
+        (postOrder.get(a._id.toString()) ?? 0) -
+        (postOrder.get(b._id.toString()) ?? 0)
+    );
+    result.pagination.totalPosts = totalSavedPosts;
+    result.pagination.totalPages = Math.ceil(totalSavedPosts / limit);
+    result.pagination.hasNextPage =
+      page < result.pagination.totalPages;
+    result.pagination.hasPreviousPage = page > 1;
+
+    return res.status(200).json({
+      success: true,
+      message: "Saved posts fetched successfully",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Unexpected get saved posts error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
 export const addComment = async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
@@ -438,7 +640,7 @@ export const addComment = async (req, res) => {
       });
     }
 
-    const post = await Post.findById(req.params.id).select("_id");
+    const post = await Post.findById(req.params.id).select("_id author");
     if (!post) {
       return res.status(404).json({ success: false, message: "Post not found" });
     }
@@ -450,6 +652,21 @@ export const addComment = async (req, res) => {
     });
     await comment.populate("author", "username fullName profilePic");
     const commentCount = await Comment.countDocuments({ post: post._id });
+
+    if (post.author.toString() !== req.user._id.toString()) {
+      try {
+        await Notification.create({
+          recipient: post.author,
+          sender: req.user._id,
+          type: "comment",
+          post: post._id,
+          comment: comment._id,
+          message: "commented on your post",
+        });
+      } catch (notificationError) {
+        console.error("Failed to create comment notification:", notificationError.message);
+      }
+    }
 
     return res.status(201).json({
       success: true,
@@ -551,6 +768,11 @@ export const deleteComment = async (req, res) => {
     }
 
     await comment.deleteOne();
+    try {
+      await Notification.deleteMany({ comment: comment._id });
+    } catch (cleanupError) {
+      console.error("Failed to clean comment notification:", cleanupError.message);
+    }
     const commentCount = await Comment.countDocuments({ post: post._id });
 
     return res.status(200).json({
@@ -718,7 +940,6 @@ export const deletePost = async (req, res) => {
 
     try {
       await post.deleteOne();
-      await Comment.deleteMany({ post: post._id });
     } catch (error) {
       console.error("MongoDB post deletion failed:", error.message);
       return res.status(500).json({
@@ -726,6 +947,17 @@ export const deletePost = async (req, res) => {
         message: "Failed to delete post",
       });
     }
+
+    const cleanupResults = await Promise.allSettled([
+      Comment.deleteMany({ post: post._id }),
+      SavedPost.deleteMany({ post: post._id }),
+      Notification.deleteMany({ post: post._id }),
+    ]);
+    cleanupResults.forEach((result) => {
+      if (result.status === "rejected") {
+        console.error("Failed to clean post-related records:", result.reason?.message);
+      }
+    });
 
     if (post.imagePublicId) {
       try {
