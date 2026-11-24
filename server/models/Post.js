@@ -28,25 +28,6 @@ const postSchema = new mongoose.Schema(
             },
         ],
 
-        comments: [
-            {
-                user: {
-                    type: mongoose.Schema.Types.ObjectId,
-                    ref: "User",
-                },
-
-                text: {
-                    type: String,
-                    required: true,
-                    trim: true,
-                },
-
-                createdAt: {
-                    type: Date,
-                    default: Date.now,
-                },
-            },
-        ],
     },
     {
         timestamps: true,
@@ -55,6 +36,8 @@ const postSchema = new mongoose.Schema(
 
 postSchema.index({ createdAt: -1 });
 postSchema.index({ author: 1, createdAt: -1 });
+postSchema.index({ likes: 1 });
+postSchema.index({ caption: "text" });
 
 const Post = mongoose.model("Post" , postSchema);
 export default Post;

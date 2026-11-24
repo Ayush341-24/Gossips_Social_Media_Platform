@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
+import Comment from "../models/Comment.js";
 import {
   uploadPostImage,
   deleteCloudinaryImage,
@@ -8,6 +9,20 @@ import {
 
 const AUTHOR_FIELDS = "username fullName profilePic";
 const MAX_LIMIT = 50;
+
+const formatPost = (post, currentUserId = null, commentCount = 0) => {
+  const result = typeof post.toObject === "function" ? post.toObject() : { ...post };
+  const likes = Array.isArray(result.likes) ? result.likes : [];
+  return {
+    ...result,
+    likeCount: likes.length,
+    isLikedByCurrentUser: Boolean(
+      currentUserId &&
+      likes.some((id) => id.toString() === currentUserId.toString())
+    ),
+    commentCount,
+  };
+};
 
 const parsePagination = (pageValue, limitValue) => {
   const page = pageValue === undefined ? 1 : Number(pageValue);
@@ -24,6 +39,58 @@ const parsePagination = (pageValue, limitValue) => {
   }
 
   return { page, limit };
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getFormattedPostPage = async ({
+  filter,
+  page,
+  limit,
+  currentUserId,
+}) => {
+  const skip = (page - 1) * limit;
+  const [posts, totalPosts] = await Promise.all([
+    Post.find(filter)
+      .select("_id image caption author likes createdAt updatedAt")
+      .populate("author", AUTHOR_FIELDS)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Post.countDocuments(filter),
+  ]);
+
+  const commentCounts = posts.length
+    ? await Comment.aggregate([
+        { $match: { post: { $in: posts.map((post) => post._id) } } },
+        { $group: { _id: "$post", count: { $sum: 1 } } },
+      ])
+    : [];
+  const countByPost = new Map(
+    commentCounts.map((item) => [item._id.toString(), item.count])
+  );
+  const formattedPosts = posts.map((post) =>
+    formatPost(
+      post,
+      currentUserId,
+      countByPost.get(post._id.toString()) || 0
+    )
+  );
+
+  const totalPages = Math.ceil(totalPosts / limit);
+  return {
+    posts: formattedPosts,
+    pagination: {
+      page,
+      limit,
+      totalPosts,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    },
+  };
 };
 
 export const createPost = async (req, res) => {
@@ -73,11 +140,12 @@ export const createPost = async (req, res) => {
       });
 
       await post.populate("author", AUTHOR_FIELDS);
+      const commentCount = await Comment.countDocuments({ post: post._id });
 
       return res.status(201).json({
         success: true,
         message: "Post created successfully",
-        post,
+        post: formatPost(post, req.user._id, commentCount),
       });
     } catch (error) {
       try {
@@ -122,16 +190,31 @@ export const getAllPosts = async (req, res) => {
     ]);
 
     const totalPages = Math.ceil(totalPosts / limit);
+    const commentCounts = await Comment.aggregate([
+      { $match: { post: { $in: posts.map((post) => post._id) } } },
+      { $group: { _id: "$post", count: { $sum: 1 } } },
+    ]);
+    const countByPost = new Map(
+      commentCounts.map((item) => [item._id.toString(), item.count])
+    );
+    const formattedPosts = posts.map((post) =>
+      formatPost(
+        post,
+        req.user?._id,
+        countByPost.get(post._id.toString()) || 0
+      )
+    );
 
     return res.status(200).json({
       success: true,
-      posts,
+      posts: formattedPosts,
       pagination: {
         page,
         limit,
         totalPosts,
         totalPages,
         hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
       },
     });
   } catch (error) {
@@ -161,10 +244,11 @@ export const getPostById = async (req, res) => {
         message: "Post not found",
       });
     }
+    const commentCount = await Comment.countDocuments({ post: post._id });
 
     return res.status(200).json({
       success: true,
-      post,
+      post: formatPost(post, req.user?._id, commentCount),
     });
   } catch (error) {
     console.error("Unexpected get post error:", error.message);
@@ -213,16 +297,32 @@ export const getPostsByUser = async (req, res) => {
     ]);
 
     const totalPages = Math.ceil(totalPosts / limit);
+    const commentCounts = await Comment.aggregate([
+      { $match: { post: { $in: posts.map((post) => post._id) } } },
+      { $group: { _id: "$post", count: { $sum: 1 } } },
+    ]);
+    const countByPost = new Map(
+      commentCounts.map((item) => [item._id.toString(), item.count])
+    );
+    const formattedPosts = posts.map((post) =>
+      formatPost(
+        post,
+        req.user?._id,
+        countByPost.get(post._id.toString()) || 0
+      )
+    );
 
     return res.status(200).json({
       success: true,
-      posts,
+      posts: formattedPosts,
       pagination: {
         page,
         limit,
         totalPosts,
         totalPages,
         hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+        hasPreviousPage: page > 1,
       },
     });
   } catch (error) {
@@ -234,35 +334,83 @@ export const getPostsByUser = async (req, res) => {
   }
 };
 
-export const likeUnlikePost = async (req, res) => {
+export const likePost = async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ success: false, message: "Invalid post ID" });
     }
 
-    const post = await Post.findById(req.params.id);
-    if (!post) {
-      return res.status(404).json({ success: false, message: "Post not found" });
-    }
-
     const userId = req.user._id;
-    const isLiked = post.likes.some((id) => id.toString() === userId.toString());
+    const post = await Post.findOneAndUpdate(
+      { _id: req.params.id, likes: { $ne: userId } },
+      { $addToSet: { likes: userId } },
+      { new: true }
+    );
 
-    if (isLiked) {
-      post.likes = post.likes.filter((id) => id.toString() !== userId.toString());
-    } else {
-      post.likes.push(userId);
+    if (!post) {
+      const exists = await Post.exists({ _id: req.params.id });
+      if (!exists) {
+        return res.status(404).json({ success: false, message: "Post not found" });
+      }
+      const likedPost = await Post.findById(req.params.id);
+      return res.status(409).json({
+        success: false,
+        message: "Post is already liked",
+        likeCount: likedPost.likes.length,
+        isLikedByCurrentUser: true,
+      });
     }
-
-    await post.save();
 
     return res.status(200).json({
       success: true,
-      message: isLiked ? "Post unliked" : "Post liked",
-      likes: post.likes.length,
+      message: "Post liked",
+      likeCount: post.likes.length,
+      isLikedByCurrentUser: true,
     });
   } catch (error) {
-    console.error("Unexpected like/unlike error:", error.message);
+    console.error("Unexpected like error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const unlikePost = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid post ID" });
+    }
+
+    const userId = req.user._id;
+    const post = await Post.findOneAndUpdate(
+      { _id: req.params.id, likes: userId },
+      { $pull: { likes: userId } },
+      { new: true }
+    );
+
+    if (!post) {
+      const exists = await Post.exists({ _id: req.params.id });
+      if (!exists) {
+        return res.status(404).json({ success: false, message: "Post not found" });
+      }
+      const unlikedPost = await Post.findById(req.params.id);
+      return res.status(409).json({
+        success: false,
+        message: "Post is not liked",
+        likeCount: unlikedPost.likes.length,
+        isLikedByCurrentUser: false,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Post unliked",
+      likeCount: post.likes.length,
+      isLikedByCurrentUser: false,
+    });
+  } catch (error) {
+    console.error("Unexpected unlike error:", error.message);
     return res.status(500).json({
       success: false,
       message: "An unexpected server error occurred",
@@ -276,30 +424,267 @@ export const addComment = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid post ID" });
     }
 
-    const { text } = req.body;
-    if (!text || !text.trim()) {
+    const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
+    if (!text) {
       return res.status(400).json({
         success: false,
         message: "Comment text is required",
       });
     }
+    if (text.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        message: "Comment must not exceed 1000 characters",
+      });
+    }
 
-    const post = await Post.findById(req.params.id);
+    const post = await Post.findById(req.params.id).select("_id");
     if (!post) {
       return res.status(404).json({ success: false, message: "Post not found" });
     }
 
-    post.comments.push({ user: req.user._id, text: text.trim() });
-    await post.save();
-    await post.populate("comments.user", "username fullName profilePic");
+    const comment = await Comment.create({
+      post: post._id,
+      author: req.user._id,
+      text,
+    });
+    await comment.populate("author", "username fullName profilePic");
+    const commentCount = await Comment.countDocuments({ post: post._id });
+
+    return res.status(201).json({
+      success: true,
+      message: "Comment added successfully",
+      comment,
+      commentCount,
+    });
+  } catch (error) {
+    console.error("Unexpected comment creation error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const getComments = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid post ID" });
+    }
+
+    const post = await Post.findById(req.params.id).select("_id");
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    const pagination = parsePagination(req.query.page, req.query.limit);
+    if (!pagination) {
+      return res.status(400).json({
+        success: false,
+        message: `page must be a positive integer and limit must be between 1 and ${MAX_LIMIT}`,
+      });
+    }
+
+    const { page, limit } = pagination;
+    const skip = (page - 1) * limit;
+    const [comments, commentCount] = await Promise.all([
+      Comment.find({ post: post._id })
+        .populate("author", "username fullName profilePic")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Comment.countDocuments({ post: post._id }),
+    ]);
+    const totalPages = Math.ceil(commentCount / limit);
 
     return res.status(200).json({
       success: true,
-      message: "Comment added successfully",
-      comments: post.comments,
+      comments,
+      commentCount,
+      pagination: {
+        page,
+        limit,
+        totalPosts: commentCount,
+        totalPages,
+        hasNextPage: page < totalPages,
+      },
     });
   } catch (error) {
-    console.error("Unexpected comment error:", error.message);
+    console.error("Unexpected get comments error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const deleteComment = async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ success: false, message: "Invalid post ID" });
+    }
+    if (!mongoose.isValidObjectId(req.params.commentId)) {
+      return res.status(400).json({ success: false, message: "Invalid comment ID" });
+    }
+
+    const post = await Post.findById(req.params.id).select("_id");
+    if (!post) {
+      return res.status(404).json({ success: false, message: "Post not found" });
+    }
+
+    const comment = await Comment.findOne({
+      _id: req.params.commentId,
+      post: post._id,
+    });
+    if (!comment) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found for this post",
+      });
+    }
+
+    if (comment.author.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this comment",
+      });
+    }
+
+    await comment.deleteOne();
+    const commentCount = await Comment.countDocuments({ post: post._id });
+
+    return res.status(200).json({
+      success: true,
+      message: "Comment deleted successfully",
+      commentCount,
+    });
+  } catch (error) {
+    console.error("Unexpected comment deletion error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const getPersonalizedFeed = async (req, res) => {
+  try {
+    const pagination = parsePagination(req.query.page, req.query.limit);
+    if (!pagination) {
+      return res.status(400).json({
+        success: false,
+        message: `page must be a positive integer and limit must be between 1 and ${MAX_LIMIT}`,
+      });
+    }
+
+    const currentUserId = req.user._id;
+    const followingIds = Array.isArray(req.user.following)
+      ? req.user.following
+      : [];
+    const authorIds = [...new Set([
+      currentUserId.toString(),
+      ...followingIds.map((id) => id.toString()),
+    ])];
+
+    const activeUsers = await User.find({ _id: { $in: authorIds } })
+      .select("_id");
+    const activeAuthorIds = activeUsers.map((user) => user._id);
+
+    const result = await getFormattedPostPage({
+      filter: { author: { $in: activeAuthorIds } },
+      ...pagination,
+      currentUserId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Personalized feed fetched successfully",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Unexpected personalized feed error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected server error occurred",
+    });
+  }
+};
+
+export const getExploreFeed = async (req, res) => {
+  try {
+    const pagination = parsePagination(req.query.page, req.query.limit);
+    if (!pagination) {
+      return res.status(400).json({
+        success: false,
+        message: `page must be a positive integer and limit must be between 1 and ${MAX_LIMIT}`,
+      });
+    }
+
+    const filter = {};
+    if (req.user) {
+      filter.author = { $ne: req.user._id };
+    }
+
+    if (req.query.author) {
+      if (!mongoose.isValidObjectId(req.query.author)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid author ID",
+        });
+      }
+      const author = await User.findById(req.query.author).select("_id");
+      if (!author) {
+        return res.status(404).json({
+          success: false,
+          message: "Author not found",
+        });
+      }
+      filter.author = req.query.author;
+    }
+
+    if (req.query.query) {
+      const keyword = req.query.query.trim();
+      if (!keyword) {
+        return res.status(400).json({
+          success: false,
+          message: "Search query cannot be empty",
+        });
+      }
+      if (keyword.length > 100) {
+        return res.status(400).json({
+          success: false,
+          message: "Search query must not exceed 100 characters",
+        });
+      }
+      filter.caption = { $regex: escapeRegex(keyword), $options: "i" };
+    }
+
+    const activeAuthorIds = await User.distinct("_id");
+    if (req.query.author) {
+      filter.author = req.query.author;
+    } else if (req.user) {
+      filter.author = {
+        $in: activeAuthorIds.filter(
+          (id) => id.toString() !== req.user._id.toString()
+        ),
+      };
+    } else {
+      filter.author = { $in: activeAuthorIds };
+    }
+
+    const result = await getFormattedPostPage({
+      filter,
+      ...pagination,
+      currentUserId: req.user?._id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Explore feed fetched successfully",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Unexpected explore feed error:", error.message);
     return res.status(500).json({
       success: false,
       message: "An unexpected server error occurred",
@@ -333,6 +718,7 @@ export const deletePost = async (req, res) => {
 
     try {
       await post.deleteOne();
+      await Comment.deleteMany({ post: post._id });
     } catch (error) {
       console.error("MongoDB post deletion failed:", error.message);
       return res.status(500).json({

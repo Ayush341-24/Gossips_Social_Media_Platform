@@ -66,4 +66,8 @@ const userSchema = new mongoose.Schema(
     }
 );
 
+userSchema.index({ followers: 1 });
+userSchema.index({ following: 1 });
+userSchema.index({ fullName: 1 });
+
 export default mongoose.model("User" , userSchema);

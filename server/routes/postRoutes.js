@@ -1,24 +1,35 @@
 import express from "express";
 import protect from "../middleware/authMiddleware.js";
 import upload, { handleUploadError } from "../middleware/uploadMiddleware.js";
+import optionalProtect from "../middleware/optionalAuthMiddleware.js";
 import {
   createPost,
   getAllPosts,
   getPostById,
   getPostsByUser,
-  likeUnlikePost,
+  getPersonalizedFeed,
+  getExploreFeed,
+  likePost,
+  unlikePost,
   addComment,
+  getComments,
+  deleteComment,
   deletePost,
 } from "../controllers/postController.js";
 
 const router = express.Router();
 
 router.post("/", protect, upload.single("image"), handleUploadError, createPost);
-router.get("/", getAllPosts);
-router.get("/user/:userId", getPostsByUser);
-router.get("/:id", getPostById);
-router.put("/:id/like", protect, likeUnlikePost);
-router.post("/:id/comment", protect, addComment);
+router.get("/", optionalProtect, getAllPosts);
+router.get("/feed", protect, getPersonalizedFeed);
+router.get("/explore", optionalProtect, getExploreFeed);
+router.get("/user/:userId", optionalProtect, getPostsByUser);
+router.get("/:id", optionalProtect, getPostById);
+router.post("/:id/like", protect, likePost);
+router.delete("/:id/like", protect, unlikePost);
+router.post("/:id/comments", protect, addComment);
+router.get("/:id/comments", getComments);
+router.delete("/:id/comments/:commentId", protect, deleteComment);
 router.delete("/:id", protect, deletePost);
 
 export default router;

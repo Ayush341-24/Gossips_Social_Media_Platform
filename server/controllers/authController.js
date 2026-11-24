@@ -128,9 +128,16 @@ export const logout = async (req, res) => {
 // Get Current User Profile
 export const getProfile = async (req, res) => {
   try {
+    const userObject = req.user.toObject ? req.user.toObject() : req.user;
+    const { followers, following, ...safeUser } = userObject;
     res.status(200).json({
       message: "Profile fetched successfully",
-      user: req.user,
+      user: {
+        ...safeUser,
+        followersCount: followers?.length || 0,
+        followingCount: following?.length || 0,
+        isFollowing: false,
+      },
     });
   } catch (error) {
     res.status(500).json({
